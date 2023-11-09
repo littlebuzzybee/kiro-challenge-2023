@@ -1,0 +1,16 @@
+{
+    "substations": [
+        {
+            "id": 1,
+            "substation_type": 3,
+            "land_cable_type": 5
+        }
+    ],
+    "substation_substation_cables": [],
+    "turbines": [
+        {
+            "id": 1,
+            "substation_id": 1
+        }
+    ]
+}
