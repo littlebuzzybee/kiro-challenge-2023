@@ -37,10 +37,9 @@ end
 
 
 
-    return model, total_cost, x, y_ss, z, y_ls, onesSs, onesVs, onesQ0, onesVt, used_substations
-end
 
-# include("Models.jl");
+
+include("Models.jl");
 
 
 @time model, total_cost, x, y_ss, z, y_ls, onesSs, onesVs, onesQ0, onesVt, used_substations = get_model2(SCIP.Optimizer);
