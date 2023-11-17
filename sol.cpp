@@ -1,10 +1,6 @@
 #include <iostream>
 
-<<<<<<< HEAD
 #include "dbg.h"
-=======
-// #include "dbg.h"
->>>>>>> 75dbb23 (ajouté le code julia)
 #include "json.hpp"
 
 using namespace std;
@@ -312,8 +308,4 @@ int main() {
 	write(best);
 
 	return 0;
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> 75dbb23 (ajouté le code julia)
