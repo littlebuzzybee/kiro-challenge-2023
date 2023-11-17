@@ -13,8 +13,8 @@ function get_model1(optimizer)
     for q=1:Qs
         @constraint(model, y_ss[:,:,q] .== y_ss[:,:,q]') # symétrie
     end
-    for v1=1:Vs
-        @constraint(model, y_ss[v1,v1,:] .== 0) # pas d'arête boucle sur le graphe des sous-stations
+    for v=1:Vs
+        @constraint(model, y_ss[v,v,:] .== 0) # pas d'arête boucle sur le graphe des sous-stations
     end
     @variable(model, y_ls[1:Vs, 1:Q0], Bin) # câble présent ([land] <--> substation, type)
 
@@ -104,6 +104,7 @@ end
 
 
 
+
 function get_model2(optimizer)
     
     ## MODEL & VARIABLES
@@ -138,7 +139,7 @@ function get_model2(optimizer)
     elseif instance_name == "small"
         dim_x = 5
         dim_y = 15
-        Nmin_used_substations = 5;
+        Nmin_used_substations = 4;
         Nmin_links = 2*2;
         used_substations = sort(Vector(1:Vs));
     elseif instance_name == "medium"
@@ -150,14 +151,14 @@ function get_model2(optimizer)
     elseif instance_name == "large"
         dim_x = 8
         dim_y = 16
-        Nmin_used_substations = 6;
-        Nmin_links = 2*3;
+        Nmin_used_substations = 3;
+        Nmin_links = 2*2;
         used_substations = sort([29,22,15,8,1, 35,28,21,14,7, 32,25,18,11,4, 34,27,20,13,6]); #31,24,17,10,3]);
     elseif instance_name == "huge"
         dim_x = 5
         dim_y = 25
         Nmin_used_substations = 8;
-        Nmin_links = 1*3;
+        Nmin_links = 2*4;
         used_substations = sort([4,13,22,31,40,49,58,67,76]);
     end
 
@@ -226,11 +227,15 @@ function get_model2(optimizer)
     @constraint(model, z * onesVt .>= x * onesSs); # si une sous-station est présente, elle doit être reliée à des turbines
 
     
-    @constraint(model, x * rs .>= pow_max * z * onesVt); # empêcher tout curtailing sans failure de sous-station
+    @constraint(model, x * rs .>= pow_max * z * onesVt); # empêcher tout curtailing SANS failure de sous-station
     # remplace le coût éq. (5) -> contraindre à 0:  i.e. chaque station doit pouvoir supporter la charge de toutes les éoliennes qui lui sont connectées
     
     @constraint(model, y_ls * rq_ls .>= pow_max * z * onesVt) # chaque câble entre la station principale et une sous-station doit pouvoir supporter la charge de toutes les éoliennes qui lui sont connectées
-    
+
+    # for v in used_substations
+    #     @constraint(model, pow_max * (z[v,:]'*onesVt) - sum(y_ss[v,vbar,:]' * rq_ss for vbar in (v+1):Vs) <= 5000); # empêcher tout curtailing AVEC failure de sous-station
+    #     # remplace le coût éq. (6) -> contraindre à 0:  i.e. chaque station doit pouvoir être prise en charge par les autres qui lui sont connectées si elle casse
+    # end
     
 
     # curt_v_under_ω_fail_v = @expression(model, pow_max * (z[v,:]'*onesVt) - sum(y_ss[v,vbar,:]' * rq_ss for vbar in (v+1):Vs)); # curtailing of v under ω and failure of v [summed over vbar]
@@ -238,8 +243,8 @@ function get_model2(optimizer)
     # pow_sent_v_to_vbar = @expression(model, (0.5*sum(y_ss[v,:,:]*rq_ss) +  πw[Ω]*sum(z[v,:]))); # power sent from v to vbar [summed over vbar]
     # capa_cabl_subs_link_v = @expression(model, sum(x[:,:]*rs) + sum(y_ls[:,:]*rq_ls)); # capacity of the cable/substation linking vbar [summed over vbar]
 
-    activate_no_curtail = false; # medium: non, huge: oui, large: non
-    if activate_no_curtail
+    activate_no_fail_all_avgsum_curtail = true; # true pour tous SAUF medium, avec la pondération égale (1/2 1/2)
+    if activate_no_fail_all_avgsum_curtail
         bound = Cmax;
         curt = QuadExpr();
         # remplace le coût éq. (6): empêcher tout curtailing supérieur à Cmax de v en tout scénario avec failure de v
@@ -258,8 +263,6 @@ function get_model2(optimizer)
         drop_zeros!(curt);
         @constraint(model, curt <=  bound)
     end
-
-    
 
 
     @constraint(model, sum(y_ss) >= Nmin_links); # forcer des liaisons entre sous stations /!\ attention, bien se rappeler que y_ss est symétrique (imposer deux fois le nombre voulu de liaisons)
@@ -289,11 +292,11 @@ function get_model2(optimizer)
 
     # OPERATIONAL COSTS
 
-    activate_cost_curtailing = true; # medium: non, huge: non, large: non
-    if activate_cost_curtailing # enlever le operational_cost pour des résultats meilleurs avec large, medium et small
+    activate_op_cost = true; # huge: oui, le reste non
+    if activate_op_cost
 
         operational_cost = QuadExpr();
-        cst_mlt = c0; # constant multiplier
+        cst_mlt = 5*c0; # constant multiplier
         
         for v in used_substations_except_Vs # to avoid MethodError of empty ranges
             # boucle auparavant faite sur un cropped_range = deleteat!(copy(used_substations), findall(x->x==Vs,used_substations)) 
@@ -305,16 +308,16 @@ function get_model2(optimizer)
             add_to_expression!(operational_cost, - cst_mlt * sum(y_ss[v,vbar,:]' * rq_ss for vbar in (v+1):Vs));
 
 
-        for vbar in used_substations
-                if vbar != v && vbar > v
-                    # second terme de (6) sans le relu ni les min
-                    # pas de facteur 1/2 ici puisque la somme se fait déjà exactement sur les couples uniques dans (v+1):Vs
-                    add_to_expression!(operational_cost,  cst_mlt * πw[Ω] *  sum(z[vbar,:])); # power generated by turbines linked to v0
-                    add_to_expression!(operational_cost,  cst_mlt * (y_ss[v,vbar,:]'*rq_ss +  πw[Ω]*sum(z[v,:])));  # power sent from v to vbar
-                    add_to_expression!(operational_cost, -cst_mlt * (x[vbar,:]'*rs +  y_ls[vbar,:]'*rq_ls)); # capacity of the cable/subsattion linking vbar
-                end
-            end
-        end
+        # for vbar in used_substations
+        #     if vbar != v && vbar > v
+        #         # second terme de (6) sans le relu ni les min
+        #         # pas de facteur 1/2 ici puisque la somme se fait déjà exactement sur les couples uniques dans (v+1):Vs
+        #         add_to_expression!(operational_cost,  cst_mlt * πw[Ω] *  sum(z[vbar,:])); # power generated by turbines linked to v0
+        #         add_to_expression!(operational_cost,  cst_mlt * (y_ss[v,vbar,:]'*rq_ss +  πw[Ω]*sum(z[v,:])));  # power sent from v to vbar
+        #         add_to_expression!(operational_cost, -cst_mlt * (x[vbar,:]'*rs +  y_ls[vbar,:]'*rq_ls)); # capacity of the cable/subsattion linking vbar
+        #     end
+        # end
+    end
 
         total_cost = construction_cost   + operational_cost;
     else
@@ -322,5 +325,12 @@ function get_model2(optimizer)
     end
 
 
-    return model, total_cost, x, y_ss, z, y_ls, onesSs, onesVs, onesQ0, onesVt, used_substations
-end
+
+
+
+
+
+
+
+
+

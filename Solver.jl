@@ -7,7 +7,7 @@ include("Import.jl");
 
 
 path = "/home/matthias/Documents/GitHub/kiro-challenge-2023/";
-instance_name = "large";
+instance_name = "huge";
 
 
 file = path * "instances/"*instance_name*".json";
@@ -29,10 +29,21 @@ if false
 end
 
 
-include("Models.jl");
 
 
-@time model, total_cost, x, y_ss, z, y_ls, onesSs, onesVs, onesQ0, onesVt, used_substations = get_model2(Gurobi.Optimizer);
+
+
+
+
+
+
+    return model, total_cost, x, y_ss, z, y_ls, onesSs, onesVs, onesQ0, onesVt, used_substations
+end
+
+# include("Models.jl");
+
+
+@time model, total_cost, x, y_ss, z, y_ls, onesSs, onesVs, onesQ0, onesVt, used_substations = get_model2(SCIP.Optimizer);
 
 set_time_limit_sec(model, 50.0)
 
@@ -47,4 +58,4 @@ include("Metrics.jl");
 
 
 include("Visualize.jl")
-visualize_result(x, y_ss, z, y_ls, path*"visualisations/", "gurobi_temp", round(cost_loss[4], digits=2))
+visualize_result(x, y_ss, z, y_ls, path*"visualisations/", "scip", round(cost_loss[4], digits=2))

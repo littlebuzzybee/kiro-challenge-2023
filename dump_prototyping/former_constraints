@@ -90,3 +90,48 @@
             # end
         end
     end =#
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    # ci dessous le no curtail fail différencié qui assure toutes les contraintes de minimum quels que soient les 4 cas croisés indépendamment
+    
+    activate_no_fail_curtail = false; # en période de test
+    if activate_no_fail_curtail
+        bound = .8*Cmax;
+        curt_11 = QuadExpr();
+        curt_21 = QuadExpr();
+        curt_12 = QuadExpr();
+        curt_22 = QuadExpr();
+        # remplace le coût éq. (6): empêcher tout curtailing supérieur à Cmax de v en tout scénario avec failure de v
+        for v in used_substations
+            if v < Vs
+                add_to_expression!(curt_11, pow_max * (z[v,:]'*onesVt) - sum(y_ss[v,vbar,:]' * rq_ss for vbar in (v+1):Vs));
+                add_to_expression!(curt_12, pow_max * (z[v,:]'*onesVt) - sum(y_ss[v,vbar,:]' * rq_ss for vbar in (v+1):Vs)); 
+                add_to_expression!(curt_21, pow_max * (z[v,:]'*onesVt) - sum(y_ss[v,vbar,:]' * rq_ss for vbar in (v+1):Vs)); 
+                add_to_expression!(curt_22, pow_max * (z[v,:]'*onesVt) - sum(y_ss[v,vbar,:]' * rq_ss for vbar in (v+1):Vs)); 
+            end
+            for vbar in used_substations
+                if vbar > v
+                    add_to_expression!(curt_11, πw[Ω] * sum(z[vbar,:]) + sum(y_ss[v,vbar,:]'*rq_ss) - sum(x[vbar,:]'*rs));
+                    add_to_expression!(curt_12, πw[Ω] * sum(z[vbar,:]) + sum(y_ss[v,vbar,:]'*rq_ss) - sum(y_ls[vbar,:]'*rq_ls));
+                    add_to_expression!(curt_22, πw[Ω] * sum(z[vbar,:]) + πw[Ω]*sum(z[v,vbar])       - sum(y_ls[vbar,:]'*rq_ls));
+                    add_to_expression!(curt_21, πw[Ω] * sum(z[vbar,:]) + πw[Ω]*sum(z[v,vbar])       - sum(x[vbar,:]'*rs));
+                    end
+            end
+        end
+        drop_zeros!(curt_11);
+        drop_zeros!(curt_12);
+        drop_zeros!(curt_21);
+        drop_zeros!(curt_22);
+        @constraint(model, curt_11 <=  bound)
+        @constraint(model, curt_12 <=  bound)
+        @constraint(model, curt_21 <=  bound)
+        @constraint(model, curt_22 <=  bound)
+    end
